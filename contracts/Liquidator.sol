@@ -14,6 +14,7 @@ interface IERC721WrapperBase {
     function getEnabledTokenIds(address owner) external view returns (uint256[] memory);
     function balanceOf(address owner, uint256 tokenId) external view returns (uint256);
     function unwrap(address from, uint256 tokenId, address to, uint256 amount, bytes calldata extraData) external;
+    function enableTokenIdAsCollateral(uint256 tokenId) external;
 }
 
 contract Liquidator {
@@ -71,7 +72,7 @@ contract Liquidator {
     /// @dev Tries IERC4626.asset() first. If it succeeds, the collateral is an EVault and we redeem.
     ///      If it reverts, we treat it as a wrapper and unwrap all enabled token IDs.
     function redeemOrUnwrap(address collateralVault, uint256 maxYield, address recipient) external {
-        require(msg.sender == address(this), "Unauthorized");
+        require(msg.sender == address(evc), "Unauthorized");
 
         // Try to call asset() to determine if this is an EVault
         (bool isEVault, ) = collateralVault.staticcall(abi.encodeCall(IERC4626.asset, ()));
@@ -122,7 +123,19 @@ contract Liquidator {
             multicallItems[sweepIdx] = abi.encodeCall(ISwapper.sweep, (params.additionalToken, 0, params.receiver));
         }
 
-        IEVC.BatchItem[] memory batchItems = new IEVC.BatchItem[](7);
+        // For wrapper collaterals, fetch the violator's enabled token IDs so the
+        // liquidator can enable the same IDs in its own account before liquidating.
+        // For plain EVaults (asset() exists) there are no token IDs.
+        (bool isEVault, ) = params.collateralVault.staticcall(abi.encodeCall(IERC4626.asset, ()));
+        uint256[] memory wrapperTokenIds;
+        if (!isEVault) {
+            wrapperTokenIds = IERC721WrapperBase(params.collateralVault).getEnabledTokenIds(params.violatorAddress);
+        } else {
+            wrapperTokenIds = new uint256[](0);
+        }
+
+        // 7 fixed items + one enableTokenIdAsCollateral per wrapper token ID
+        IEVC.BatchItem[] memory batchItems = new IEVC.BatchItem[](7 + wrapperTokenIds.length);
 
         // Step 1: enable controller
         batchItems[0] = IEVC.BatchItem({
@@ -140,10 +153,22 @@ contract Liquidator {
             data: abi.encodeCall(IEVC.enableCollateral, (address(this), params.collateralVault))
         });
 
+        // Steps 3..2+N: enable each wrapper token ID as collateral in the liquidator's account
+        for (uint256 i = 0; i < wrapperTokenIds.length; i++) {
+            batchItems[2 + i] = IEVC.BatchItem({
+                onBehalfOfAccount: address(this),
+                targetContract: params.collateralVault,
+                value: 0,
+                data: abi.encodeCall(IERC721WrapperBase.enableTokenIdAsCollateral, (wrapperTokenIds[i]))
+            });
+        }
+
+        uint256 off = 2 + wrapperTokenIds.length;
+
         (uint256 maxRepay, uint256 maxYield) = ILiquidation(params.vault).checkLiquidation(address(this), params.violatorAddress, params.collateralVault);
 
-        // Step 3: Liquidate account in violation
-        batchItems[2] = IEVC.BatchItem({
+        // Step off+1: Liquidate account in violation
+        batchItems[off] = IEVC.BatchItem({
             onBehalfOfAccount: address(this),
             targetContract: params.vault,
             value: 0,
@@ -153,36 +178,35 @@ contract Liquidator {
             )
         });
 
-        // Step 4: Redeem collateral (EVault) or unwrap (ERC721 wrapper) to swapper
-        batchItems[3] = IEVC.BatchItem({
+        // Step off+2: Redeem collateral (EVault) or unwrap (ERC721 wrapper) to swapper
+        batchItems[off + 1] = IEVC.BatchItem({
             onBehalfOfAccount: address(this),
             targetContract: address(this),
             value: 0,
             data: abi.encodeCall(this.redeemOrUnwrap, (params.collateralVault, maxYield, swapperAddress))
         });
 
-        // Step 5: Swap collateral for borrowed asset, repay, and sweep
-        batchItems[4] = IEVC.BatchItem({
+        // Step off+3: Swap collateral for borrowed asset, repay, and sweep
+        batchItems[off + 2] = IEVC.BatchItem({
             onBehalfOfAccount: address(this),
             targetContract: swapperAddress,
             value: 0,
             data: abi.encodeCall(ISwapper.multicall, multicallItems)
         });
 
-        batchItems[5] = IEVC.BatchItem({
+        batchItems[off + 3] = IEVC.BatchItem({
             onBehalfOfAccount: address(this),
             targetContract: params.vault,
             value: 0,
             data: abi.encodeCall(IRiskManager.disableController, ())
         });
 
-        batchItems[6] = IEVC.BatchItem({
+        batchItems[off + 4] = IEVC.BatchItem({
             onBehalfOfAccount: address(0),
             targetContract: address(evc),
             value: 0,
             data: abi.encodeCall(IEVC.disableCollateral, (address(this), params.collateralVault))
         });
-
 
         // Submit batch to EVC
         evc.batch(batchItems);
@@ -233,10 +257,20 @@ contract Liquidator {
             multicallItems[sweepIdx] = abi.encodeCall(ISwapper.sweep, (params.additionalToken, 0, params.receiver));
         }
 
-        IEVC.BatchItem[] memory batchItems = new IEVC.BatchItem[](7);
-
-        // Update Pyth oracles
+        // Update Pyth oracles before building the batch
         IPyth(PYTH).updatePriceFeeds{value: msg.value}(pythUpdateData);
+
+        // For wrapper collaterals, fetch the violator's enabled token IDs
+        (bool isEVault, ) = params.collateralVault.staticcall(abi.encodeCall(IERC4626.asset, ()));
+        uint256[] memory wrapperTokenIds;
+        if (!isEVault) {
+            wrapperTokenIds = IERC721WrapperBase(params.collateralVault).getEnabledTokenIds(params.violatorAddress);
+        } else {
+            wrapperTokenIds = new uint256[](0);
+        }
+
+        // 7 fixed items + one enableTokenIdAsCollateral per wrapper token ID
+        IEVC.BatchItem[] memory batchItems = new IEVC.BatchItem[](7 + wrapperTokenIds.length);
 
         // Step 1: enable controller
         batchItems[0] = IEVC.BatchItem({
@@ -246,8 +280,6 @@ contract Liquidator {
             data: abi.encodeCall(IEVC.enableController, (address(this), params.vault))
         });
 
-        (uint256 maxRepay, uint256 maxYield) = ILiquidation(params.vault).checkLiquidation(address(this), params.violatorAddress, params.collateralVault);
-
         // Step 2: enable collateral
         batchItems[1] = IEVC.BatchItem({
             onBehalfOfAccount: address(0),
@@ -256,8 +288,22 @@ contract Liquidator {
             data: abi.encodeCall(IEVC.enableCollateral, (address(this), params.collateralVault))
         });
 
-        // Step 3: Liquidate account in violation
-        batchItems[2] = IEVC.BatchItem({
+        // Steps 3..2+N: enable each wrapper token ID as collateral in the liquidator's account
+        for (uint256 i = 0; i < wrapperTokenIds.length; i++) {
+            batchItems[2 + i] = IEVC.BatchItem({
+                onBehalfOfAccount: address(this),
+                targetContract: params.collateralVault,
+                value: 0,
+                data: abi.encodeCall(IERC721WrapperBase.enableTokenIdAsCollateral, (wrapperTokenIds[i]))
+            });
+        }
+
+        uint256 off = 2 + wrapperTokenIds.length;
+
+        (uint256 maxRepay, uint256 maxYield) = ILiquidation(params.vault).checkLiquidation(address(this), params.violatorAddress, params.collateralVault);
+
+        // Step off+1: Liquidate account in violation
+        batchItems[off] = IEVC.BatchItem({
             onBehalfOfAccount: address(this),
             targetContract: params.vault,
             value: 0,
@@ -267,36 +313,35 @@ contract Liquidator {
             )
         });
 
-        // Step 4: Redeem collateral (EVault) or unwrap (ERC721 wrapper) to swapper
-        batchItems[3] = IEVC.BatchItem({
+        // Step off+2: Redeem collateral (EVault) or unwrap (ERC721 wrapper) to swapper
+        batchItems[off + 1] = IEVC.BatchItem({
             onBehalfOfAccount: address(this),
             targetContract: address(this),
             value: 0,
             data: abi.encodeCall(this.redeemOrUnwrap, (params.collateralVault, maxYield, swapperAddress))
         });
 
-        // Step 5: Swap collateral for borrowed asset, repay, and sweep
-        batchItems[4] = IEVC.BatchItem({
+        // Step off+3: Swap collateral for borrowed asset, repay, and sweep
+        batchItems[off + 2] = IEVC.BatchItem({
             onBehalfOfAccount: address(this),
             targetContract: swapperAddress,
             value: 0,
             data: abi.encodeCall(ISwapper.multicall, multicallItems)
         });
 
-        batchItems[5] = IEVC.BatchItem({
+        batchItems[off + 3] = IEVC.BatchItem({
             onBehalfOfAccount: address(this),
             targetContract: params.vault,
             value: 0,
             data: abi.encodeCall(IRiskManager.disableController, ())
         });
 
-        batchItems[6] = IEVC.BatchItem({
+        batchItems[off + 4] = IEVC.BatchItem({
             onBehalfOfAccount: address(0),
             targetContract: address(evc),
             value: 0,
             data: abi.encodeCall(IEVC.disableCollateral, (address(this), params.collateralVault))
         });
-
 
         // Submit batch to EVC
         evc.batch(batchItems);

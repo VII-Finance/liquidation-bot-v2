@@ -1033,11 +1033,9 @@ class EVCListener:
                     #if we've seen the account already and the status
                     # check is not due to changing controller
                     if account_address in seen_accounts:
-                        same_controller = self.account_monitor.accounts.get(
-                            account_address).controller.address == Web3.to_checksum_address(
-                                vault_address)
-
-                        if same_controller:
+                        existing = self.account_monitor.accounts.get(account_address)
+                        if existing and existing.controller.address == Web3.to_checksum_address(
+                                vault_address):
                             logger.info("EVCListener: Account %s already seen with "
                                         "controller %s, skipping", account_address, vault_address)
                             continue
