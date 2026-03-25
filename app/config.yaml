@@ -114,11 +114,11 @@ chains:
 
     # Deployed contract addresses
     contracts:
-      LIQUIDATOR_CONTRACT: "0xAAF93d5475d092EA68a748137eE19D8130918392"
+      LIQUIDATOR_CONTRACT: "0xe522912161a54f619b84c1030bf23773fa156b76"
 
       #EVK Addresses
       EVC: "0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383"
-      SWAPPER: "0x2Bba09866b6F1025258542478C39720A09B728bF"
+      SWAPPER: "0xBF4D90a9c3F1CC9Bb5FeA7F3C6c2F264DD652BFE" #Swapper that converts sent ETH into WETH in the fallback
       SWAP_VERIFIER: "0xae26485ACDDeFd486Fe9ad7C2b34169d360737c7"
 
       # Other relevant contracts & Units of Account
@@ -148,11 +148,11 @@ chains:
 
     # Deployed contract addresses
     contracts:
-      LIQUIDATOR_CONTRACT: "0xAAF93d5475d092EA68a748137eE19D8130918392"
+      LIQUIDATOR_CONTRACT: "0xf38be3c023f308b0ef14581c4dbbc4badb46dff9"
 
       #EVK Addresses
       EVC: "0x2A1176964F5D7caE5406B627Bf6166664FE83c60"
-      SWAPPER: "0xDF3009390D10dC18a8f8B42402F1541c7235DfB4"
+      SWAPPER: "0xe253a6E5a86D0981eEeBAfE754fA35eC449a71Fd" #Swapper that converts sent ETH into WETH in the fallback
       SWAP_VERIFIER: "0xDAd370C74A9Fe7e6bfd55De69Baf81060e51eab4"
 
       # Other relevant contracts & Units of Account

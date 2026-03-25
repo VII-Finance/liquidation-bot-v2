@@ -111,7 +111,7 @@ contract LiquidatorCompleteTest is Test {
     using SafeERC20 for IERC20;
     // ── Mainnet addresses ────────────────────────────────────────────────────
     address constant EVC_ADDR    = 0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383;
-    address constant SWAPPER_ADDR = 0x2Bba09866b6F1025258542478C39720A09B728bF;
+    address constant SWAPPER_ADDR = 0xBF4D90a9c3F1CC9Bb5FeA7F3C6c2F264DD652BFE;
     address constant WETH_ADDR   = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
 
     // Euler V2 single-asset EVK vaults
@@ -123,7 +123,7 @@ contract LiquidatorCompleteTest is Test {
     address constant USDC_USDT_V4_WRAPPER = 0xB7fD0aCb27D19F12596325758f545a430E586780;
 
     // Run against the fork to find suitable owners, e.g.:
-    //   cast call <WRAPPER> "ownerOf(uint256)" <tokenId> --rpc-url $MAINNET_RPC_URL --block 24727274
+    //   cast call <WRAPPER> "ownerOf(uint256)" <tokenId> --rpc-url $MAINNET_RPC_URL --block 24733122
     address usdcUsdtPositionHolder = 0x12e74f3C61F6b4d17a9c3Fdb3F42e8f18a8bB394; 
     uint256 usdcUsdtTokenId        = 190371;//USDC-USDT position worth 5.34 dollars. (1.97 USDC, 3.38 USDT)
 
@@ -153,7 +153,7 @@ contract LiquidatorCompleteTest is Test {
 
     // ─────────────────────────────────────────────────────────────────────────
     function setUp() public {
-        vm.createSelectFork(vm.envString("MAINNET_RPC_URL"), 24727274);
+        vm.createSelectFork(vm.envString("MAINNET_RPC_URL"), 24733122);
 
         evc       = IEVC(payable(EVC_ADDR));
         debtVault = IEVault(E_USDC);
@@ -458,5 +458,14 @@ contract LiquidatorCompleteTest is Test {
         liquidator.liquidateSingleCollateral(params, swapperData);
 
         assertGe(IERC20(address(usdc)).balanceOf(liquidatorEOA), 0, "liquidator should receive USDC profit");
+    }
+
+    function test_SendETHToSwapper() public{
+        uint256 ethToSend = 1 ether;
+        deal(address(this), ethToSend);
+        (bool success,) = address(SWAPPER_ADDR).call{value: ethToSend}("");
+        require(success, "ETH transfer failed");
+
+        assertEq(IERC20(WETH_ADDR).balanceOf(SWAPPER_ADDR), ethToSend);
     }
 }
