@@ -114,7 +114,7 @@ chains:
 
     # Deployed contract addresses
     contracts:
-      LIQUIDATOR_CONTRACT: "0xe522912161a54f619b84c1030bf23773fa156b76"
+      LIQUIDATOR_CONTRACT: "0xe522912161a54F619B84c1030bF23773fa156b76"
 
       #EVK Addresses
       EVC: "0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383"
@@ -148,7 +148,7 @@ chains:
 
     # Deployed contract addresses
     contracts:
-      LIQUIDATOR_CONTRACT: "0xf38be3c023f308b0ef14581c4dbbc4badb46dff9"
+      LIQUIDATOR_CONTRACT: "0xf38BE3C023F308b0EF14581c4DbbC4baDB46dFf9"
 
       #EVK Addresses
       EVC: "0x2A1176964F5D7caE5406B627Bf6166664FE83c60"
